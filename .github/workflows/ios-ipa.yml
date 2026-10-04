@@ -1,0 +1,87 @@
+name: Build IPA (iOS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'stone-balance.html'
+      - 'manifest.webmanifest'
+      - 'icons/**'
+      - 'app/**'
+      - '.github/workflows/ios-ipa.yml'
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Cài dependency
+        working-directory: app
+        run: npm ci
+
+      - name: Đồng bộ web -> native
+        working-directory: app
+        run: |
+          node scripts/copy-web.js
+          npx cap sync ios
+
+      - name: Build archive (không ký)
+        working-directory: app/ios/App
+        run: |
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/App.xcarchive" \
+            -skipPackagePluginValidation \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            archive
+
+      - name: Đóng gói .ipa chưa ký
+        working-directory: app/ios/App/build
+        run: |
+          mkdir -p Payload
+          cp -R App.xcarchive/Products/Applications/App.app Payload/App.app
+          zip -qry CanBangDa-unsigned.ipa Payload
+          ls -la CanBangDa-unsigned.ipa
+
+      - name: Build bản chạy trên Simulator
+        working-directory: app/ios/App
+        run: |
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath "$PWD/build-sim" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          cd build-sim/Build/Products/Release-iphonesimulator
+          zip -qry "$GITHUB_WORKSPACE/CanBangDa-simulator.app.zip" App.app
+
+      - name: Gom file
+        run: |
+          mkdir -p dist
+          cp app/ios/App/build/CanBangDa-unsigned.ipa dist/
+          cp CanBangDa-simulator.app.zip dist/ || true
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CanBangDa-ios
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

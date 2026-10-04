@@ -1,0 +1,16 @@
+{
+  "appId": "com.luoin.stonebalance",
+  "appName": "Cân Bằng Đá",
+  "webDir": "www",
+  "backgroundColor": "#0b1020",
+  "android": {
+    "backgroundColor": "#0b1020",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "backgroundColor": "#0b1020",
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}

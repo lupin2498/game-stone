@@ -1,0 +1,81 @@
+name: Build APK (Android)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'stone-balance.html'
+      - 'manifest.webmanifest'
+      - 'icons/**'
+      - 'app/**'
+      - '.github/workflows/android-apk.yml'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Cài SDK Android cần thiết
+        run: sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Cài dependency
+        working-directory: app
+        run: npm ci
+
+      - name: Đồng bộ web -> native
+        working-directory: app
+        run: |
+          node scripts/copy-web.js
+          npx cap sync android
+
+      - name: Giải mã keystore (nếu có secret)
+        if: env.HAS_KEYSTORE == 'true'
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build APK debug (cài được ngay)
+        working-directory: app/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Build APK release đã ký (nếu có keystore)
+        if: env.HAS_KEYSTORE == 'true'
+        working-directory: app/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Gom file cài đặt
+        run: |
+          mkdir -p dist
+          cp app/android/app/build/outputs/apk/debug/app-debug.apk dist/CanBangDa-debug.apk
+          if [ "$HAS_KEYSTORE" = "true" ]; then
+            cp app/android/app/build/outputs/apk/release/app-release.apk dist/CanBangDa-release.apk || true
+            cp app/android/app/build/outputs/bundle/release/app-release.aab dist/CanBangDa-release.aab || true
+          fi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CanBangDa-android
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
