@@ -3,7 +3,7 @@ name: Build IPA (iOS)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
     paths:
       - 'stone-balance.html'
       - 'manifest.webmanifest'
