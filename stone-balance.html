@@ -525,7 +525,7 @@ let camY=0, camZ=1, camY0=0, shake=0, wobble=0;
 let parts=[], floats=[], stars=[], hills=[];
 let pedTopY=0, pedLeft=0, pedRight=0, centerX=0, previewY=0, pivotX=0;
 let heightCm=0, lastScore=-1, lastHeight=-1;
-const SWING_MUL=1.5;   // hệ số tốc độ di chuyển ngang của viên đá đang ngắm
+const SWING_MUL=3.0;   // hệ số tốc độ di chuyển ngang của viên đá đang ngắm
 
 try{ best=parseInt(localStorage.getItem('stone-balance-best')||'0',10)||0; }catch(e){ best=0; }
 uiBest.textContent=best;
