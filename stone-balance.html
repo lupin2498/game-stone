@@ -525,6 +525,7 @@ let camY=0, camZ=1, camY0=0, shake=0, wobble=0;
 let parts=[], floats=[], stars=[], hills=[];
 let pedTopY=0, pedLeft=0, pedRight=0, centerX=0, previewY=0, pivotX=0;
 let heightCm=0, lastScore=-1, lastHeight=-1;
+const SWING_MUL=1.5;   // hệ số tốc độ di chuyển ngang của viên đá đang ngắm
 
 try{ best=parseInt(localStorage.getItem('stone-balance-best')||'0',10)||0; }catch(e){ best=0; }
 uiBest.textContent=best;
@@ -603,7 +604,8 @@ function spawnPreview(){
 function drop(){
   if(state!=='aim' || !preview) return;
   const d=difficulty();
-  const sw=Math.cos(aimT*(1.15+d*0.95))*(1.15+d*0.95)*ampNow();
+  const k=swingRate()*SWING_MUL;
+  const sw=Math.cos(aimT*k)*k*ampNow();
   cur=preview; preview=null;
   cur.vel={x:sw*0.18, y:40};
   cur.av=(Math.random()-0.5)*0.25;
@@ -613,6 +615,7 @@ function drop(){
   hint.style.opacity='0';
 }
 function ampNow(){ const d=difficulty(), p=Math.min(W,470); return p*0.16 + d*p*0.18; }
+function swingRate(){ return 1.15 + difficulty()*0.95; }
 
 function dust(p,s){
   const n=3+Math.round(s*7);
@@ -681,9 +684,9 @@ function update(dt){
   wobble=lerp(wobble, target, target>wobble?0.45:0.08);
 
   if(state==='aim' && preview){
-    const d=difficulty(), sp=1.15+d*0.95;
+    const d=difficulty(), sp=swingRate();
     aimT+=dt;
-    preview.pos.x=pivotX + Math.sin(aimT*sp)*ampNow();
+    preview.pos.x=pivotX + Math.sin(aimT*sp*SWING_MUL)*ampNow();
     preview.pos.y=previewY;
     preview.angle=preview.baseAngle + Math.sin(aimT*sp*0.5)*(0.07+d*0.2);
     preview.updateTransform();
