@@ -6,9 +6,13 @@ on:
     branches: [main]
     paths:
       - 'stone-balance.html'
+      - 'auth.html'
+      - 'online.js'
+      - 'firebase-config.js'
       - 'manifest.webmanifest'
       - 'sw.js'
       - 'icons/**'
+      - 'build-site.sh'
       - '.github/workflows/pages.yml'
 
 permissions:
@@ -28,13 +32,12 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Cấu hình máy chủ đăng nhập (nếu có secret FIREBASE_CONFIG_JS)
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: if [ -n "$FIREBASE_CONFIG_JS" ]; then printf '%s\n' "$FIREBASE_CONFIG_JS" > firebase-config.js; fi
       - name: Dựng thư mục site
-        run: |
-          mkdir -p site/icons
-          cp stone-balance.html site/index.html
-          cp stone-balance.html site/stone-balance.html
-          cp manifest.webmanifest sw.js site/
-          cp icons/* site/icons/
+        run: ./build-site.sh
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

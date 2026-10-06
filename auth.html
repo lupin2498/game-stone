@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<meta name="referrer" content="no-referrer">
+<title>Đăng nhập · Cân Bằng Đá</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;background:#0b1020;color:#eef2ff;font-family:ui-rounded,"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{max-width:360px;width:100%;text-align:center}
+  .logo{width:84px;height:84px;border-radius:20px;margin:0 auto 18px;display:block}
+  h1{font-size:22px;font-weight:900;margin-bottom:10px}
+  #status{font-size:14px;line-height:1.5;color:#b8c4e4;min-height:42px}
+  .btn{display:none;margin-top:18px;padding:14px 30px;border:0;border-radius:99px;font:800 16px/1 inherit;color:#0a0f1e;
+    background:linear-gradient(180deg,#fff,#c9d6f5);text-decoration:none}
+  .btn.on{display:inline-block}
+</style>
+</head>
+<body>
+<div class="card">
+  <img class="logo" src="icons/icon-192.png" alt="">
+  <h1>Cân Bằng Đá</h1>
+  <div id="status">Đang chuẩn bị…</div>
+  <a class="btn" id="back" href="#">Quay lại game</a>
+</div>
+<script src="firebase-config.js"></script>
+<script src="online.js"></script>
+<script>
+(function(){
+  var st=document.getElementById('status'), back=document.getElementById('back');
+  if(!window.FIREBASE_CONFIG){ st.textContent='Máy chủ đăng nhập chưa được cấu hình (firebase-config.js).'; return; }
+  var cfg=window.STONE_ONLINE||{};
+  StoneOnline.authBridge(window.FIREBASE_CONFIG, {
+    appScheme: cfg.appScheme, emulator: cfg.emulator,
+    ui: {
+      status: function(t){ st.textContent=t; },
+      done: function(url, ok){
+        st.textContent = ok ? 'Đăng nhập xong! Đang quay lại game…' : 'Đăng nhập không thành công. Quay lại game để thử lại.';
+        back.href=url; back.classList.add('on');
+        window.__returnUrl=url;
+        setTimeout(function(){ location.replace(url); }, 150);   // nếu trình duyệt chặn tự chuyển, người chơi bấm nút
+      }
+    }
+  }).catch(function(e){ st.textContent='Lỗi: '+((e&&e.code)||e); });
+})();
+</script>
+</body>
+</html>

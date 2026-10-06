@@ -1,0 +1,56 @@
+name: Deploy Firebase (Hosting + luật Firestore)
+
+# Cần 3 secret: FIREBASE_PROJECT_ID, FIREBASE_SERVICE_ACCOUNT (JSON key của service account
+# có quyền Firebase Hosting Admin + Firebase Rules Admin) và FIREBASE_CONFIG_JS (nội dung firebase-config.js).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'stone-balance.html'
+      - 'auth.html'
+      - 'online.js'
+      - 'firebase-config.js'
+      - 'sw.js'
+      - 'manifest.webmanifest'
+      - 'icons/**'
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'build-site.sh'
+      - '.github/workflows/firebase-hosting.yml'
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_FIREBASE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' && secrets.FIREBASE_PROJECT_ID != '' }}
+    steps:
+      - name: Kiểm tra secret
+        if: env.HAS_FIREBASE != 'true'
+        run: echo "::notice::Chưa có FIREBASE_SERVICE_ACCOUNT / FIREBASE_PROJECT_ID -> bỏ qua deploy."
+      - uses: actions/checkout@v4
+        if: env.HAS_FIREBASE == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_FIREBASE == 'true'
+        with:
+          node-version: '22'
+      - name: Cấu hình + dựng site
+        if: env.HAS_FIREBASE == 'true'
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG_JS" ]; then printf '%s\n' "$FIREBASE_CONFIG_JS" > firebase-config.js; fi
+          ./build-site.sh
+      - name: Deploy
+        if: env.HAS_FIREBASE == 'true'
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@15 deploy --only hosting,firestore:rules --project "$PROJECT" --non-interactive

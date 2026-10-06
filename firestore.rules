@@ -1,0 +1,34 @@
+rules_version = '2';
+// Bảng xếp hạng Cân Bằng Đá: ai cũng đọc được; mỗi người chỉ ghi được bản ghi của chính mình,
+// điểm phải nằm trong giới hạn hợp lệ, chỉ được tăng, và tối đa 1 lần ghi / 5 giây.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validEntry(d) {
+      return d.keys().hasOnly(['name', 'photo', 'provider', 'best', 'height', 'rankKey', 'updatedAt'])
+        && d.keys().hasAll(['name', 'provider', 'best', 'height', 'rankKey', 'updatedAt'])
+        && d.best is int && d.best >= 0 && d.best <= 500
+        && d.height is int && d.height >= 0 && d.height <= 99999
+        && d.rankKey == d.best * 100000 + d.height
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 40
+        && (!('photo' in d) || d.photo == null || (d.photo is string && d.photo.size() <= 500 && d.photo.matches('^https://.*')))
+        && d.provider in ['google.com', 'facebook.com']
+        && d.updatedAt == request.time;
+    }
+
+    match /leaderboard/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && validEntry(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+        && validEntry(request.resource.data)
+        && request.resource.data.rankKey >= resource.data.rankKey
+        && request.time > resource.data.updatedAt + duration.value(5, 's');
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

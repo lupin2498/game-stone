@@ -5,18 +5,23 @@
   "description": "Cân Bằng Đá - Stone Balance",
   "scripts": {
     "sync:web": "node scripts/copy-web.js",
-    "sync": "npm run sync:web && cap sync",
+    "sync": "npm run build:online && npm run sync:web && cap sync",
     "icons": "capacitor-assets generate --iconBackgroundColor #0b1020 --splashBackgroundColor #0b1020",
-    "android:apk": "npm run sync:web && cap sync android && cd android && ./gradlew assembleDebug",
-    "ios:open": "npm run sync:web && cap sync ios && cap open ios"
+    "android:apk": "npm run build:online && npm run sync:web && cap sync android && cd android && ./gradlew assembleDebug",
+    "ios:open": "npm run build:online && npm run sync:web && cap sync ios && cap open ios",
+    "build:online": "esbuild online/online.src.js --bundle --minify --format=iife --global-name=StoneOnline --target=es2019 --legal-comments=none --outfile=../online.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/assets": "^3.0.5",
+    "esbuild": "^0.28.2",
+    "firebase": "^12.19.0"
   }
 }

@@ -7,6 +7,9 @@ on:
     paths:
       - 'stone-balance.html'
       - 'manifest.webmanifest'
+      - 'sw.js'
+      - 'online.js'
+      - 'firebase-config.js'
       - 'icons/**'
       - 'app/**'
       - '.github/workflows/android-apk.yml'
@@ -43,9 +46,16 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Đồng bộ web -> native
+      - name: Cấu hình máy chủ đăng nhập (nếu có secret FIREBASE_CONFIG_JS)
+        env:
+          FIREBASE_CONFIG_JS: ${{ secrets.FIREBASE_CONFIG_JS }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG_JS" ]; then printf '%s\n' "$FIREBASE_CONFIG_JS" > firebase-config.js; echo "đã nạp cấu hình Firebase"; else echo "không có secret -> bản chơi khách (bảng xếp hạng trên máy)"; fi
+
+      - name: Build module online + đồng bộ web -> native
         working-directory: app
         run: |
+          npm run build:online
           node scripts/copy-web.js
           npx cap sync android
 
