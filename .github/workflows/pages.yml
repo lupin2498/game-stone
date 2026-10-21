@@ -1,19 +1,8 @@
 name: Deploy web/PWA (GitHub Pages)
 
+# Chạy tay: cần bật Settings -> Pages -> Source: GitHub Actions trước, nếu không bước deploy sẽ lỗi.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'stone-balance.html'
-      - 'auth.html'
-      - 'online.js'
-      - 'firebase-config.js'
-      - 'manifest.webmanifest'
-      - 'sw.js'
-      - 'icons/**'
-      - 'build-site.sh'
-      - '.github/workflows/pages.yml'
 
 permissions:
   contents: read
