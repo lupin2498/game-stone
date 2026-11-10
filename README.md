@@ -22,7 +22,8 @@ Mở `stone-balance.html` bằng trình duyệt. Chạm / bấm Space để th�
 | `sw.js`, `manifest.webmanifest`, `icons/` | PWA |
 | `app/` | Dự án Capacitor: `android/`, `ios/`, icon, script build |
 | `build-site.sh` | Dựng thư mục `site/` để deploy web |
-| `.github/workflows/` | CI build APK, IPA, deploy Firebase / GitHub Pages |
+| `tests/` | Bộ test tự động (game, đăng nhập, luật Firestore, app trên emulator) |
+| `.github/workflows/` | CI: test, build APK, IPA, deploy Firebase / GitHub Pages |
 
 ## Bộ cài Android / iOS
 Mỗi lần push lên `main`, GitHub Actions tự build:
@@ -31,6 +32,11 @@ Mỗi lần push lên `main`, GitHub Actions tự build:
 
 Tải ở tab **Actions** → run mới nhất → **Artifacts**.
 Build trên máy, ký bản release, cài lên iOS và bật đăng nhập: xem [`app/README.md`](app/README.md).
+
+## Kiểm thử
+`tests/` chứa bộ test tự động (xem [`tests/README.md`](tests/README.md)): hơn 100 ca cho game, đăng nhập, bảng xếp hạng và luật
+bảo mật, chạy bằng Playwright + Firebase Emulator; workflow **Tests** còn cài app lên Android emulator và iOS Simulator
+để thử chạm thật, nút Back và deep link.
 
 ## Bản web
 - **Firebase Hosting** (khuyên dùng, cần cho đăng nhập trong app): workflow *Deploy Firebase* — thêm secret theo `app/README.md`.

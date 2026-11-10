@@ -1,0 +1,156 @@
+name: Tests
+
+# Web: toàn bộ test game + đăng nhập/bảng xếp hạng với Firebase Emulator (có cả luồng popup/redirect thật của Google SDK).
+# Android: cài APK lên emulator, chạm thật, bấm Back, deep link.  iOS: chạy app trên Simulator, deep link.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - 'stone-balance.html'
+      - 'auth.html'
+      - 'online.js'
+      - 'sw.js'
+      - 'firebase-config.js'
+      - 'firestore.rules'
+      - 'manifest.webmanifest'
+      - 'icons/**'
+      - 'app/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web (game + Firebase Emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            tests/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Cài dependency
+        run: |
+          (cd app && npm ci)
+          (cd tests && npm ci)
+          (cd tests && npx playwright install --with-deps chromium)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('tests/package-lock.json') }}
+      - name: Test game (tĩnh, biên, bàn phím, vật lý, SW, vỏ app, fuzz)
+        working-directory: tests
+        env:
+          FUZZ_MIN: '2'
+          MONKEY_MIN: '1'
+        run: npm run test:game
+      - name: Test đăng nhập + bảng xếp hạng + luật bảo mật (Firebase Emulator)
+        if: always()
+        working-directory: tests
+        run: npm run test:e2e
+
+  android:
+    name: Android emulator (API ${{ matrix.api }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 30
+            target: default
+          - api: 35
+            target: google_apis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            tests/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Cài SDK Android cần thiết
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | tail -1)
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+      - name: Build APK có kèm tự kiểm tra
+        run: |
+          (cd app && npm ci && npm run build:online && node scripts/copy-web.js)
+          (cd tests && npm ci --ignore-scripts)
+          node tests/native/prepare.js
+          (cd app && npx cap sync android && cd android && ./gradlew --no-daemon assembleDebug)
+      - name: Bật KVM cho emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Chạy app trên emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: node tests/native/android-run.js app/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-api${{ matrix.api }}-test-output
+          path: tests/.out/android
+          retention-days: 14
+
+  ios:
+    name: iOS Simulator
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            tests/package-lock.json
+      - name: Chuẩn bị app có kèm tự kiểm tra
+        run: |
+          (cd app && npm ci && npm run build:online && node scripts/copy-web.js)
+          (cd tests && npm ci --ignore-scripts)
+          node tests/native/prepare.js
+          (cd app && npx cap sync ios)
+      - name: Build cho Simulator
+        working-directory: app/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+            -derivedDataPath "$PWD/build-sim" -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build | tail -n 5
+      - name: Chạy app trên Simulator
+        run: node tests/native/ios-run.js app/ios/App/build-sim/Build/Products/Debug-iphonesimulator/App.app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-test-output
+          path: tests/.out/ios
+          retention-days: 14

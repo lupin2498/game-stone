@@ -32,8 +32,10 @@ function cleanName(s) {
   s = String(s || '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
   return (s || 'Người chơi').slice(0, MAX_NAME);
 }
+// Chỉ nhận ảnh đại diện từ máy chủ Google/Facebook (khớp firestore.rules) — URL khác bị bỏ để lần ghi điểm không bị luật từ chối
+const PHOTO_OK = /^https:\/\/(lh[3-6]\.googleusercontent\.com|graph\.facebook\.com|platform-lookaside\.fbsbx\.com)\//;
 function cleanPhoto(u) {
-  return typeof u === 'string' && /^https:\/\//.test(u) && u.length <= 500 ? u : null;
+  return typeof u === 'string' && PHOTO_OK.test(u) && u.length <= 500 ? u : null;
 }
 function toUser(u) {
   if (!u) return null;
@@ -101,7 +103,8 @@ export function create(config, opts = {}) {
     try { localStorage.setItem(STATE_KEY, JSON.stringify({ s, p: id, t: Date.now() })); } catch (e) {}
     const base = opts.authPage || `https://${config.authDomain}/auth.html`;
     const url = `${base}?p=${encodeURIComponent(id)}&s=${s}&r=${encodeURIComponent(scheme + '://auth')}`;
-    await Browser.open({ url });
+    try { await Browser.open({ url }); }
+    catch (e) { throw Object.assign(new Error('browser'), { code: 'auth/bridge-failed' }); }
   }
 
   let lastUrl = null;
@@ -118,7 +121,7 @@ export function create(config, opts = {}) {
     if (h.get('error')) { emitErr(h.get('error')); return false; }
     const p = h.get('p');
     let cred = null;
-    if (p === 'google' && (h.get('id') || h.get('at'))) cred = GoogleAuthProvider.credential(h.get('id') || null, h.get('at') || null);
+    if (p === 'google' && (h.get('id') || h.get('at'))) cred = GoogleAuthProvider.credential(h.get('id') || null, h.get('id') ? null : h.get('at'));
     if (p === 'facebook' && h.get('at')) cred = FacebookAuthProvider.credential(h.get('at'));
     if (!cred) { emitErr('auth/invalid-credential'); return false; }
     try { await signInWithCredential(auth, cred); return true; }
@@ -173,20 +176,32 @@ export async function authBridge(config, opts = {}) {
   const auth = getAuth(app);
   useEmulators(auth, null, opts.emulator);
   const q = new URLSearchParams(location.search);
+  const cleanUrl = () => { try { history.replaceState(null, '', location.pathname); } catch (e) {} };
+  let st = null;
+  try { st = JSON.parse(sessionStorage.getItem(BRIDGE_KEY) || 'null'); } catch (e) {}
+  if (st && !(Date.now() - st.t < 10 * 60 * 1000)) st = null;            // yêu cầu cũ quá 10 phút: bỏ
 
-  if (q.get('p')) {                                   // bước 1: app vừa mở trang này
+  // Firebase đưa trình duyệt quay về ĐÚNG địa chỉ lúc bắt đầu (kèm ?p=…): phải phân biệt "yêu cầu mới từ app"
+  // với "lượt quay về của yêu cầu đang chờ", nếu không trang sẽ gửi người chơi đi đăng nhập lặp vô hạn.
+  const fresh = !!q.get('p') && !(st && st.s === q.get('s'));
+  if (fresh) {                                          // bước 1: app vừa mở trang này
     const p = q.get('p'), s = q.get('s') || '', r = q.get('r') || allowed;
     // chỉ trả token về đúng app này -> không thể bị lợi dụng để gửi token đi nơi khác
     if (r !== allowed) { ui.status('Địa chỉ quay lại không hợp lệ.'); return { error: 'bad-return' }; }
     if (!PROVIDERS.includes(p) || !/^[a-f0-9]{16,64}$/.test(s)) { ui.status('Yêu cầu đăng nhập không hợp lệ.'); return { error: 'bad-request' }; }
-    sessionStorage.setItem(BRIDGE_KEY, JSON.stringify({ p, s, r }));
+    sessionStorage.setItem(BRIDGE_KEY, JSON.stringify({ p, s, r, t: Date.now() }));
+    cleanUrl();                                         // URL sạch -> lượt quay về không còn mang tham số
     ui.status(p === 'google' ? 'Đang mở Google…' : 'Đang mở Facebook…');
-    await signInWithRedirect(auth, makeProvider(p));
+    try { await signInWithRedirect(auth, makeProvider(p)); }
+    catch (e) {                                         // không đi được tới nhà cung cấp: báo lỗi về app thay vì treo ở đây
+      sessionStorage.removeItem(BRIDGE_KEY);
+      const url = r + '#' + new URLSearchParams({ p, s, error: code(e) }).toString();
+      ui.done(url, false); return { url };
+    }
     return { redirecting: true };
   }
 
-  let st = null;
-  try { st = JSON.parse(sessionStorage.getItem(BRIDGE_KEY) || 'null'); } catch (e) {}
+  cleanUrl();
   if (!st) { ui.status('Không có yêu cầu đăng nhập nào đang chờ. Hãy quay lại game và bấm đăng nhập.'); return { error: 'no-request' }; }
   const out = new URLSearchParams({ p: st.p, s: st.s });
   try {
@@ -195,8 +210,9 @@ export async function authBridge(config, opts = {}) {
     if (!res) out.set('error', 'auth/cancelled');
     else {
       const cred = st.p === 'google' ? GoogleAuthProvider.credentialFromResult(res) : FacebookAuthProvider.credentialFromResult(res);
+      // Google: ID token là đủ để đăng nhập Firebase -> không chuyển access token (quyền rộng hơn) qua deep link
       if (cred && cred.idToken) out.set('id', cred.idToken);
-      if (cred && cred.accessToken) out.set('at', cred.accessToken);
+      else if (cred && cred.accessToken) out.set('at', cred.accessToken);
       if (!out.get('id') && !out.get('at')) out.set('error', 'auth/invalid-credential');
     }
   } catch (e) { out.set('error', code(e)); }

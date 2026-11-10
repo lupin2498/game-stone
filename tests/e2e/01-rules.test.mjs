@@ -1,0 +1,47 @@
+/* Luật bảo mật Firestore (firestore.rules) chạy trên emulator */
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit, serverTimestamp, deleteDoc, setLogLevel } from 'firebase/firestore';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+setLogLevel('silent');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const env = await initializeTestEnvironment({ projectId: 'demo-stone', firestore: { host: '127.0.0.1', port: 8080, rules: fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8') } });
+await env.clearFirestore();
+let fail = 0, pass = 0;
+const t = async (name, p) => { try { await p; pass++; console.log('PASS | ' + name); } catch (e) { fail++; console.log('FAIL | ' + name + ' | ' + String(e.message || e).slice(0, 160)); } };
+const ok = (best, height, extra = {}) => ({ name: 'An', photo: null, provider: 'google.com', best, height, rankKey: best * 100000 + height, updatedAt: serverTimestamp(), ...extra });
+const alice = env.authenticatedContext('alice').firestore(), bob = env.authenticatedContext('bob').firestore(), anon = env.unauthenticatedContext().firestore();
+const A = d => doc(alice, 'leaderboard', 'alice'), B = () => doc(bob, 'leaderboard', 'bob');
+
+await t('R1 khách đọc được bảng xếp hạng', assertSucceeds(getDocs(query(collection(anon, 'leaderboard'), orderBy('rankKey', 'desc'), limit(50)))));
+await t('R2 khách không ghi được', assertFails(setDoc(doc(anon, 'leaderboard', 'alice'), ok(5, 100))));
+await t('R3 ghi bản ghi của chính mình', assertSucceeds(setDoc(A(), ok(5, 100))));
+await t('R4 không ghi được bản ghi người khác', assertFails(setDoc(doc(bob, 'leaderboard', 'alice'), ok(9, 100))));
+await t('R5 chặn điểm vượt giới hạn', assertFails(setDoc(B(), ok(9999, 100))));
+await t('R6 chặn chiều cao vượt giới hạn', assertFails(setDoc(B(), ok(5, 100000, { rankKey: 5 * 100000 + 100000 }))));
+await t('R7 chặn rankKey giả', assertFails(setDoc(B(), ok(5, 100, { rankKey: 999999999 }))));
+await t('R8 chặn số thực / số âm', assertFails(setDoc(B(), ok(5.5, 100, { rankKey: 550100 }))));
+await t('R8b chặn điểm âm', assertFails(setDoc(B(), ok(-1, 100, { rankKey: -99900 }))));
+await t('R9 chặn trường lạ', assertFails(setDoc(B(), ok(5, 100, { isAdmin: true }))));
+await t('R10 chặn tên quá dài', assertFails(setDoc(B(), ok(5, 100, { name: 'x'.repeat(41) }))));
+await t('R10b chặn tên rỗng', assertFails(setDoc(B(), ok(5, 100, { name: '' }))));
+await t('R11 chặn provider lạ', assertFails(setDoc(B(), ok(5, 100, { provider: 'password' }))));
+await t('R12 chặn ảnh không phải https', assertFails(setDoc(B(), ok(5, 100, { photo: 'javascript:alert(1)' }))));
+await t('R12b chặn ảnh từ máy chủ lạ (theo dõi IP người xem)', assertFails(setDoc(B(), ok(5, 100, { photo: 'https://evil.example/pixel.png' }))));
+await t('R12c chặn tên miền giả dạng', assertFails(setDoc(B(), ok(5, 100, { photo: 'https://lh3.googleusercontent.com.evil.example/a.png' }))));
+await t('R12d cho ảnh đại diện Google', assertSucceeds(setDoc(B(), ok(5, 100, { photo: 'https://lh3.googleusercontent.com/a/ACg8ocK=s96-c' }))));
+await t('R12e cho ảnh đại diện Facebook', assertSucceeds(setDoc(doc(env.authenticatedContext('carol').firestore(), 'leaderboard', 'carol'), ok(5, 100, { provider: 'facebook.com', photo: 'https://graph.facebook.com/1234567890/picture' }))));
+await t('R13 chặn thời gian giả', assertFails(setDoc(doc(env.authenticatedContext('dave').firestore(), 'leaderboard', 'dave'), ok(5, 100, { updatedAt: new Date(0) }))));
+await t('R14 chặn ghi lại ngay trong 5 giây', assertFails(setDoc(A(), ok(6, 100))));
+await new Promise(r => setTimeout(r, 5500));
+await t('R15 chặn hạ điểm', assertFails(setDoc(A(), ok(4, 100))));
+await t('R16 cho tăng điểm sau 5 giây', assertSucceeds(setDoc(A(), ok(7, 150))));
+await t('R17 chặn ghi collection khác', assertFails(setDoc(doc(alice, 'users', 'alice'), { x: 1 })));
+await t('R18 không xoá được bản ghi người khác', assertFails(deleteDoc(doc(bob, 'leaderboard', 'alice'))));
+await t('R19 tự xoá bản ghi của mình', assertSucceeds(deleteDoc(A())));
+await env.clearFirestore();
+await env.cleanup();
+console.log(`\n01-rules.test.mjs: ${pass} PASS, ${fail} FAIL, 0 SKIP`);
+process.exit(fail ? 1 : 0);

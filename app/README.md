@@ -14,7 +14,7 @@ app/
 ```
 
 App ID: `com.luoin.stonebalance` · Tên: **Cân Bằng Đá** · Khoá hướng dọc · Chơi offline được.
-Phiên bản 1.1 (versionCode 2) — có đăng nhập Google/Facebook và bảng xếp hạng.
+Phiên bản 1.2 (versionCode 3) — có đăng nhập Google/Facebook và bảng xếp hạng.
 
 ---
 
@@ -25,8 +25,15 @@ Vào tab **Actions** của repo, chạy workflow rồi tải file ở mục *Art
 | Workflow | Kết quả |
 |---|---|
 | **Build APK (Android)** | `CanBangDa-debug.apk` — cài thẳng vào máy Android |
+| **Tests** | Chạy toàn bộ test: web + Firebase Emulator, Android emulator, iOS Simulator |
 | **Build IPA (iOS)** | `CanBangDa-unsigned.ipa` + bản chạy Simulator |
 | **Deploy web/PWA** | Bản web trên GitHub Pages để cài vào màn hình chính |
+
+### Chữ ký của bản debug
+Bản `CanBangDa-debug.apk` được ký bằng `app/android/app/debug.keystore` nằm sẵn trong repo (mật khẩu `android`, như mọi
+khoá debug). Nhờ vậy mọi bản build đều cùng chữ ký và **cài đè lên bản cũ được, không mất kỷ lục**. Các bản APK tải trước
+phiên bản 1.2 được ký bằng khoá tạm của máy build nên lần đầu lên 1.2 phải gỡ bản cũ rồi cài lại.
+Khoá debug là công khai — khi phát hành thật (Google Play, gửi rộng rãi) hãy dùng bản release ký bằng keystore riêng bên dưới.
 
 ### Ký bản release Android (tuỳ chọn)
 Tạo keystore rồi thêm 4 secret vào repo; workflow sẽ tự build thêm APK/AAB đã ký:
@@ -95,14 +102,19 @@ Bật bản online — làm 1 lần, khoảng 15 phút:
    npx firebase-tools login
    npx firebase-tools deploy --only hosting,firestore:rules --project <project-id>
    ```
-   Game web chạy tại `https://<project>.web.app`. Nếu dùng thêm GitHub Pages, thêm tên miền đó ở
-   *Authentication → Settings → Authorized domains*.
+   Game web chạy tại **`https://<project>.firebaseapp.com`** — hãy dùng đúng địa chỉ này (trùng `authDomain`):
+   Safari, PWA trên iOS và các trình duyệt chặn cookie bên thứ ba chỉ đăng nhập kiểu chuyển hướng được khi trang game
+   và `authDomain` cùng tên miền. Muốn dùng `https://<project>.web.app` hoặc tên miền riêng thì đổi `authDomain` trong
+   `firebase-config.js` thành tên miền đó và thêm `https://<tên-miền>/__/auth/handler` vào danh sách redirect URI của
+   Google (Google Cloud Console → Credentials → OAuth client) và Facebook. Tên miền khác (vd. GitHub Pages) phải được thêm ở
+   *Authentication → Settings → Authorized domains* và chỉ đăng nhập được bằng cửa sổ popup.
 6. **Build app có đăng nhập**: thêm secret `FIREBASE_CONFIG_JS` (toàn bộ nội dung `firebase-config.js` đã điền)
    vào repo → workflow APK/IPA tự nạp. Tuỳ chọn tự deploy Firebase: thêm `FIREBASE_PROJECT_ID` và
    `FIREBASE_SERVICE_ACCOUNT` (JSON key) → workflow *Deploy Firebase* chạy mỗi lần push lên `main`.
 
 ### Cách hoạt động
-- **Web/PWA**: cửa sổ đăng nhập của Google/Facebook (popup; PWA trên iOS dùng redirect).
+- **Web/PWA**: cửa sổ đăng nhập của Google/Facebook (popup; PWA trên iOS hoặc khi popup bị chặn thì chuyển hướng cả trang).
+  Trình duyệt nhúng trong Zalo/Messenger/Facebook… bị Google chặn đăng nhập — game sẽ nhắc mở bằng Chrome/Safari.
 - **App Android/iOS**: Google/Facebook chặn đăng nhập trong WebView, nên app mở `auth.html` bằng trình duyệt hệ thống
   (Custom Tabs / SafariViewController), đăng nhập xong quay về app qua `com.luoin.stonebalance://auth`.
   Không cần SDK native, `google-services.json` hay SHA-1.
@@ -110,6 +122,9 @@ Bật bản online — làm 1 lần, khoảng 15 phút:
   `firestore.rules`: ai cũng đọc được; mỗi người chỉ ghi bản ghi của mình, điểm trong giới hạn, chỉ được tăng,
   tối đa 1 lần ghi / 5 giây. Điểm vẫn do máy người chơi gửi lên nên không chống được gian lận tuyệt đối.
 - Chơi khi chưa đăng nhập vẫn được tính: đăng nhập sau là kỷ lục tự đồng bộ (lấy điểm cao hơn giữa máy và máy chủ).
+  Kỷ lục trên máy gắn với tài khoản đã nhận nó: đăng nhập tài khoản khác trên cùng máy thì không được hưởng kỷ lục của người trước.
+- Ghi điểm lỗi (mất mạng, hoặc vừa ghi trong 5 giây trước) sẽ tự thử lại; có mạng trở lại là đồng bộ ngay.
+- Ảnh đại diện chỉ nhận từ máy chủ của Google/Facebook (cả ở luật Firestore lẫn khi hiển thị).
 
 ### Sửa module online
 Mã nguồn ở `app/online/online.src.js`, build ra `online.js` ở gốc repo: `cd app && npm run build:online`.

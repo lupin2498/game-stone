@@ -7,8 +7,8 @@ android {
         applicationId "com.luoin.stonebalance"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,6 +17,15 @@ android {
         }
     }
     signingConfigs {
+        debug {
+            // Khoá debug cố định, nằm trong repo (mật khẩu "android" công khai như mọi debug.keystore):
+            // mọi bản APK debug build ở CI đều cùng chữ ký -> cài đè bản mới lên bản cũ được, không mất kỷ lục.
+            // Chỉ dùng cho bản thử; phát hành thật thì ký bằng keystore riêng qua các secret ANDROID_KEYSTORE_*.
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
         release {
             // Chỉ dùng khi có keystore (CI truyền qua biến môi trường). Không có thì bỏ qua.
             def ks = System.getenv("ANDROID_KEYSTORE_PATH")

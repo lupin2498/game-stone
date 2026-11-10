@@ -2,3 +2,6 @@ site/
 node_modules/
 .firebase/
 *.log
+tests/e2e/.site/
+tests/e2e/.site-rules/
+tests/.out/

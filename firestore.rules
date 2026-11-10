@@ -1,6 +1,6 @@
 rules_version = '2';
 // Bảng xếp hạng Cân Bằng Đá: ai cũng đọc được; mỗi người chỉ ghi được bản ghi của chính mình,
-// điểm phải nằm trong giới hạn hợp lệ, chỉ được tăng, và tối đa 1 lần ghi / 5 giây.
+// điểm phải nằm trong giới hạn hợp lệ, chỉ được tăng, tối đa 1 lần ghi / 5 giây; ảnh đại diện chỉ từ máy chủ Google/Facebook.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,7 +11,8 @@ service cloud.firestore {
         && d.height is int && d.height >= 0 && d.height <= 99999
         && d.rankKey == d.best * 100000 + d.height
         && d.name is string && d.name.size() > 0 && d.name.size() <= 40
-        && (!('photo' in d) || d.photo == null || (d.photo is string && d.photo.size() <= 500 && d.photo.matches('^https://.*')))
+        && (!('photo' in d) || d.photo == null || (d.photo is string && d.photo.size() <= 500
+            && d.photo.matches('^https://(lh[3-6][.]googleusercontent[.]com|graph[.]facebook[.]com|platform-lookaside[.]fbsbx[.]com)/.*')))
         && d.provider in ['google.com', 'facebook.com']
         && d.updatedAt == request.time;
     }

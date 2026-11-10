@@ -5,12 +5,17 @@
   "backgroundColor": "#0b1020",
   "android": {
     "backgroundColor": "#0b1020",
-    "allowMixedContent": false,
-    "webContentsDebuggingEnabled": false
+    "allowMixedContent": false
   },
   "ios": {
     "backgroundColor": "#0b1020",
     "contentInset": "never",
     "scrollEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "initialViewportFitValueHint": "cover"
+    }
   }
 }

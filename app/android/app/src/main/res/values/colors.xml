@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Màu nền của game: dùng cho nền cửa sổ để vùng status bar / thanh điều hướng không bị trắng -->
+    <color name="gameBackground">#0B1020</color>
+</resources>

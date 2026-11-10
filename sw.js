@@ -3,7 +3,7 @@
    - Ảnh/icon: cache-first, cập nhật nền
    - Không đụng tới request khác domain (Firebase, Google, Facebook) và đường dẫn /__/ của Firebase Hosting
    Đổi VERSION mỗi lần phát hành để dọn cache cũ. */
-const VERSION = '2026-10-06.1';
+const VERSION = '2026-11-10.1';
 const CACHE = 'stone-balance-' + VERSION;
 const PRECACHE = [
   './', './index.html', './stone-balance.html', './manifest.webmanifest',

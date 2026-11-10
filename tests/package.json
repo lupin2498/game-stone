@@ -1,0 +1,21 @@
+{
+  "name": "stone-balance-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bộ test tự động cho Cân Bằng Đá",
+  "scripts": {
+    "test": "node run.js game",
+    "test:game": "node run.js game",
+    "test:e2e": "node e2e/prepare.js && firebase emulators:exec --config e2e/firebase.json --project demo-stone --only auth,firestore,hosting \"node run.js e2e\"",
+    "test:all": "npm run test:game && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "acorn": "^8.19.0",
+    "eslint": "^10.1.0",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^15.35.0",
+    "playwright": "1.63.0",
+    "pngjs": "^7.0.0"
+  }
+}
