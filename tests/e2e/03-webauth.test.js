@@ -1,14 +1,31 @@
 'use strict';
 /* Luồng đăng nhập trên web (popup / redirect) và trang cầu nối auth.html của app, với Auth Emulator.
    Phần cần thư viện gapi của Google (apis.google.com) tự SKIP khi mạng chặn — CI trên GitHub chạy đủ. */
-const { test, check, newPage, finish, SKIP } = require('../lib/harness');
+const { test, check, newPage: rawNewPage, finish, SKIP } = require('../lib/harness');
 const E = require('../lib/emu');
+/* Trang đăng nhập của Auth Emulator nạp CSS/JS trang trí từ CDN ngoài (unpkg, Google Fonts) và script của nó chỉ chạy sau khi
+   các file đó tải xong. Trả file rỗng ngay tại chỗ để test không phụ thuộc tốc độ/độ sống của CDN (trang vẫn chạy đủ khi thiếu). */
+const CDN = /^https:\/\/(unpkg\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
+const newPage = async (opts, init) => {
+  const p = await rawNewPage(opts, init);
+  await p.context().route(CDN, r => r.fulfill({ status: 200, contentType: /\.js(\?|$)/.test(r.request().url()) ? 'application/javascript' : 'text/css', body: '' }));
+  return p;
+};
 const SCHEME = 'com.luoin.stonebalance://auth';
 const S = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 async function pickNewAccount(page, email, name) {          // giao diện chọn tài khoản của emulator
   await page.waitForSelector('#add-account-button', { timeout: 20000 });
-  await page.click('#add-account-button');
+  // Nút hiện ra TRƯỚC khi script của trang gắn xử lý (trang còn chờ tải một thư viện từ CDN unpkg) -> bấm sớm thì mất lượt bấm.
+  // Chờ script của trang chạy xong rồi mới bấm, và bấm lại tới khi form mở ra.
+  await page.waitForFunction('typeof toggleForm === "function"', null, { timeout: 45000 }).catch(() => {});
+  let open = false;
+  for (let i = 0; i < 20 && !open; i++) {
+    await page.click('#add-account-button', { timeout: 1500 }).catch(() => {});
+    open = await page.waitForSelector('#email-input', { state: 'visible', timeout: 1000 }).then(() => true).catch(() => false);
+  }
+  if (!open) throw new Error('trang đăng nhập giả lập không mở được form thêm tài khoản: ' + page.url().slice(0, 100) + ' | ' +
+    String(await page.evaluate('document.body.innerText').catch(() => '?')).replace(/\s+/g, ' ').slice(0, 160));
   await page.fill('#email-input', email);
   await page.fill('#display-name-input', name);
   await page.click('#sign-in');

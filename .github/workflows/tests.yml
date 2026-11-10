@@ -73,6 +73,8 @@ jobs:
             target: default
           - api: 35
             target: google_apis
+          - api: 36          # Android 16: bắt buộc vẽ tràn viền + nút Back kiểu mới (predictive back) với app targetSdk 36
+            target: google_apis
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
