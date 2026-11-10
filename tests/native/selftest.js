@@ -9,9 +9,11 @@
   window.addEventListener('error', function (e) { var m = String(e.message || e).slice(0, 200); errors.push(m); out('JSERROR', m); });
   window.addEventListener('unhandledrejection', function (e) { var m = 'rejection: ' + String(e.reason).slice(0, 200); errors.push(m); out('JSERROR', m); });
   document.addEventListener('visibilitychange', function () { out('VISIBILITY', { hidden: document.hidden }); });
+  out('BOOT', { at: location.protocol + '//' + location.host, rs: document.readyState });
   var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   async function until(fn, ms) { var t = Date.now(); while (Date.now() - t < ms) { try { if (fn()) return true; } catch (e) {} await wait(60); } return false; }
-  function countFrames(ms) { return new Promise(function (res) { var n = 0, t = performance.now(); (function f() { n++; if (performance.now() - t < ms) requestAnimationFrame(f); else res(n); })(); }); }
+  function countFrames(ms) { return new Promise(function (res) { var n = 0, g = 0, pl = null, t = performance.now();
+    (function f() { n++; try { if (last !== pl) { g++; pl = last; } } catch (e) {} if (performance.now() - t < ms) requestAnimationFrame(f); else res({ raf: n, game: g }); })(); }); }
   function px(x, y) { try { var d = ctx.getImageData(Math.round(x * DPR), Math.round(y * DPR), 1, 1).data; return [d[0], d[1], d[2], d[3]]; } catch (e) { return String(e).slice(0, 60); } }
   function cssPx(prop) { var d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-top:' + prop; document.body.appendChild(d); var v = parseFloat(getComputedStyle(d).paddingTop); d.remove(); return v; }
 
@@ -26,7 +28,8 @@
     // 9999 = biến/hàm không được định nghĩa trên nền tảng này
     r.safe = { varTop: cssPx('var(--safe-area-inset-top, 9999px)'), varBottom: cssPx('var(--safe-area-inset-bottom, 9999px)'), envTop: cssPx('env(safe-area-inset-top, 9999px)'), envBottom: cssPx('env(safe-area-inset-bottom, 9999px)'),
       hudTop: Math.round(document.querySelector('.stat').getBoundingClientRect().top), hintGap: Math.round(innerHeight - hint.getBoundingClientRect().bottom) };
-    r.fps = (await countFrames(1000));
+    var fr = await countFrames(2000);
+    r.fps = Math.round(fr.raf / 2 * 10) / 10; r.loop = fr.game;
     // chơi thử 3 viên bằng sự kiện con trỏ tổng hợp (đi qua đúng trình xử lý chạm của game)
     startGame();
     for (var i = 0; i < 3 && state !== 'over'; i++) {
@@ -45,6 +48,7 @@
     try { r.sw = navigator.serviceWorker ? (await navigator.serviceWorker.getRegistrations()).length : -1; } catch (e) { r.sw = 'ERR'; }
     await until(function () { return !Online.configured || Online.failed || (Online.api && Online.api.known); }, 15000);
     r.online = { configured: Online.configured, api: !!Online.api, known: !!(Online.api && Online.api.known), failed: Online.failed, native: !!(Online.api && Online.api.native) };
+    r.frameErr = !!frameErr;
     r.errors = errors.slice(0, 5);
     out('RESULT', r);
 
@@ -54,19 +58,19 @@
       var ev = null, h = function (e) { ev = { trusted: e.isTrusted, type: e.pointerType || e.type }; };
       cv.addEventListener(window.PointerEvent ? 'pointerdown' : 'touchstart', h, true);
       out('PHASE', 'touch-ready');
-      var okTouch = await until(function () { return ev && state !== 'aim'; }, 40000);
+      var okTouch = await until(function () { return ev && state !== 'aim'; }, 100000);
       out('TOUCH', { ok: okTouch, ev: ev, state: state, audio: SFX.ctx ? SFX.ctx.state : 'none' });
       // 2) nút Back khi đang mở bảng xếp hạng -> chỉ đóng bảng
       if (state !== 'over') gameOver('selftest'); await until(function () { return over.classList.contains('on'); }, 5000);
       openBoard(); await wait(400);
       out('PHASE', 'board-open');
-      var closed = await until(function () { return !boardEl.classList.contains('on'); }, 40000);
+      var closed = await until(function () { return !boardEl.classList.contains('on'); }, 100000);
       out('BACKBOARD', { closed: closed, hidden: document.hidden });
       if (!closed) closeBoard();
       // 3) nút Back lần nữa -> app thu nhỏ; CI mở lại app
       await wait(400);
       out('PHASE', 'back-ready');
-      var hid = await until(function () { return document.hidden; }, 40000);
+      var hid = await until(function () { return document.hidden; }, 100000);
       var back = hid && await until(function () { return !document.hidden; }, 60000);
       out('BACKHOME', { hidden: hid, resumed: back, state: state, overShown: over.classList.contains('on') });
     }

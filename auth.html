@@ -38,7 +38,8 @@
     ui: {
       status: function(t){ st.textContent=t; },
       done: function(url, ok){
-        st.textContent = ok ? 'Đăng nhập xong! Đang quay lại game…' : 'Đăng nhập không thành công. Quay lại game để thử lại.';
+        // Trình duyệt thường chặn việc tự mở app khi người dùng chưa chạm -> luôn hiện nút để bấm
+        st.textContent = ok ? 'Đăng nhập xong! Bấm “Quay lại game” nếu trang không tự chuyển.' : 'Đăng nhập không thành công. Bấm “Quay lại game” để thử lại.';
         back.href=url; back.classList.add('on');
         window.__returnUrl=url;
         setTimeout(function(){ location.replace(url); }, 150);   // nếu trình duyệt chặn tự chuyển, người chơi bấm nút

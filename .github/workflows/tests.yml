@@ -112,6 +112,7 @@ jobs:
           target: ${{ matrix.target }}
           arch: x86_64
           profile: pixel_6
+          ram-size: 3072M
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: node tests/native/android-run.js app/android/app/build/outputs/apk/debug/app-debug.apk
@@ -143,6 +144,7 @@ jobs:
           (cd app && npx cap sync ios)
       - name: Build cho Simulator
         working-directory: app/ios/App
+        shell: bash          # bật pipefail: xcodebuild lỗi thì bước này phải lỗi dù có "| tail"
         run: |
           xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
             -derivedDataPath "$PWD/build-sim" -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build | tail -n 5

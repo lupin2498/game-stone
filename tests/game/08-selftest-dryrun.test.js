@@ -20,8 +20,10 @@ const FAKE_CAP = require('../lib/fake-capacitor');
     p.on('console', m => { const t = m.text(); const k = t.match(/^\[SELFTEST\] (\S+) (.*)$/); if (k) { seen.push(k[1] + ' ' + k[2]); try { (log[k[1]] = log[k[1]] || []).push(JSON.parse(k[2])); } catch (e) {} } });
     const has = (tag, val, ms) => { const t0 = Date.now(); return (async () => { while (Date.now() - t0 < ms) { if ((log[tag] || []).some(v => val === undefined || JSON.stringify(v) === JSON.stringify(val))) return true; await p.waitForTimeout(100); } return false; })(); };
     await p.goto(srv.url);
+    check(await has('BOOT', undefined, 20000), 'không có BOOT (dòng báo hiệu đầu tiên mà CI dùng để biết đã đọc được log)', seen.slice(-5));
     check(await has('RESULT', undefined, 90000), 'không có RESULT', seen.slice(-5));
     const r = log.RESULT[0];
+    check(r.fps >= 1 && r.loop >= 2 && r.frameErr === false, 'số đo vòng lặp game sai', { fps: r.fps, loop: r.loop, frameErr: r.frameErr });
     check(r.ready && r.native && r.platform === 'android' && r.play.score >= 1 && r.play.finite && r.overShown && r.sw === 0, 'RESULT sai', r);
     check(r.online.configured && r.online.api && r.online.known && r.online.native && !r.online.failed, 'online.js không khởi tạo trong vỏ app', r.online);
     check(Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 200 && r.pixels.sky[2] > r.pixels.sky[0], 'canvas không vẽ đúng', r.pixels);
@@ -44,6 +46,31 @@ const FAKE_CAP = require('../lib/fake-capacitor');
     check(errs.length === 0, 'lỗi JS', errs.slice(0, 3));
     await p.context().close(); await srv.close();
     return { fps: r.fps, safe: r.safe, ua: r.ua };
+  });
+  await test('D2 bộ lái CI: nhận diện cửa sổ đang giữ focus, đọc hộp thoại hệ thống, chọn đúng nút để gạt', async () => {
+    const D = require('../native/driver');
+    const PKG = 'com.luoin.stonebalance';
+    check(D.appHasFocus('mCurrentFocus=Window{2b81a7e u0 com.luoin.stonebalance/com.luoin.stonebalance.MainActivity}', PKG), 'không nhận ra cửa sổ game');
+    check(!D.appHasFocus('mCurrentFocus=Window{d0e1f2 u0 Application Not Responding: com.luoin.stonebalance}', PKG), 'nhầm hộp thoại ANR của chính game là cửa sổ game');
+    check(!D.appHasFocus('mCurrentFocus=Window{d0e1f2 u0 Application Not Responding: com.android.systemui}', PKG), 'nhầm hộp thoại ANR là cửa sổ game');
+    check(!D.appHasFocus('mCurrentFocus=Window{aa u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}', PKG), 'nhầm launcher là game');
+    check(!D.appHasFocus('mCurrentFocus=null', PKG) && !D.appHasFocus('ERR: adb: device offline', PKG), 'nhầm trạng thái lỗi là game');
+    check(!D.appHasFocus('mCurrentFocus=Window{aa u0 com.luoin.stonebalancer/x.Main}', PKG), 'nhầm gói có tên gần giống');
+    const attrs = 'content-desc="" checkable="false" checked="false" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="true" password="false" selected="false"';
+    const xml = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0">` +
+      `<node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="android" clickable="false" ${attrs} bounds="[42,957][1038,1443]">` +
+      `<node index="0" text="System UI isn&apos;t responding" resource-id="android:id/alertTitle" class="android.widget.TextView" package="android" clickable="false" ${attrs} bounds="[147,1062][933,1136]" />` +
+      `<node index="1" text="Close app" resource-id="android:id/aerr_close" class="android.widget.Button" package="android" clickable="true" ${attrs} bounds="[84,1149][996,1275]" />` +
+      `<node index="2" text="Wait" resource-id="android:id/aerr_wait" class="android.widget.Button" package="android" clickable="true" ${attrs} bounds="[84,1275][996,1401]" /></node></hierarchy>`;
+    const nodes = D.parseUi(xml);
+    check(nodes.length === 4 && nodes[1].text === "System UI isn't responding" && nodes[1].clickable === false, 'đọc cây giao diện sai', nodes);
+    const b = D.pickDialogButton(nodes);
+    check(b && b.text === 'Wait' && b.x === 540 && b.y === 1338 && b.clickable === true, 'không chọn nút Wait / sai toạ độ', b);
+    const crash = D.parseUi(xml.replace(/<node index="2"[^>]*\/>/, ''));
+    check(D.pickDialogButton(crash).text === 'Close app', 'không có Wait thì phải bấm Close app');
+    check(D.pickDialogButton(D.parseUi('<hierarchy><node text="Cân Bằng Đá" resource-id="" bounds="[0,0][10,10]" /></hierarchy>')) === null, 'màn hình không có hộp thoại thì không được bấm gì');
+    check(D.parseUi('ERR: không dump được').length === 0, 'dump lỗi phải cho danh sách rỗng');
+    return { nodes: nodes.length };
   });
   await finish();
 })();

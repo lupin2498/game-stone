@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node run.js game",
     "test:game": "node run.js game",
-    "test:e2e": "node e2e/prepare.js && firebase emulators:exec --config e2e/firebase.json --project demo-stone --only auth,firestore,hosting \"node run.js e2e\"",
+    "test:e2e": "node e2e/prepare.js && firebase emulators:exec --config e2e/firebase.json --project demo-stone --only auth,firestore,hosting --log-verbosity QUIET \"node run.js e2e\"",
     "test:all": "npm run test:game && npm run test:e2e"
   },
   "devDependencies": {

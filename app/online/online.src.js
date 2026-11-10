@@ -22,15 +22,18 @@ import { Browser } from '@capacitor/browser';
 const COL = 'leaderboard';
 const MAX_NAME = 40;
 const MAX_HEIGHT = 99999;
+const MAX_BEST = 500;                 // khớp giới hạn trong firestore.rules
 const STATE_KEY = 'sb_auth_state';
 const BRIDGE_KEY = 'sb_bridge';
 const PROVIDERS = ['google', 'facebook'];
 
-export const rankKey = (best, height) => (best | 0) * 100000 + Math.max(0, Math.min(MAX_HEIGHT, height | 0));
+export const rankKey = (best, height) => Math.max(0, Math.min(MAX_BEST, best | 0)) * 100000 + Math.max(0, Math.min(MAX_HEIGHT, height | 0));
 
 function cleanName(s) {
-  s = String(s || '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
-  return (s || 'Người chơi').slice(0, MAX_NAME);
+  s = String(s || '').replace(/[\u0000-\u001f\u007f]/g, '').trim() || 'Người chơi';
+  let out = '';
+  for (const ch of s) { if (out.length + ch.length > MAX_NAME) break; out += ch; }    // cắt theo ký tự, không cắt đôi emoji
+  return out.trim() || 'Người chơi';
 }
 // Chỉ nhận ảnh đại diện từ máy chủ Google/Facebook (khớp firestore.rules) — URL khác bị bỏ để lần ghi điểm không bị luật từ chối
 const PHOTO_OK = /^https:\/\/(lh[3-6]\.googleusercontent\.com|graph\.facebook\.com|platform-lookaside\.fbsbx\.com)\//;
@@ -137,7 +140,7 @@ export function create(config, opts = {}) {
   /* Ghi kỷ lục nếu tốt hơn kỷ lục trên máy chủ. Trả về {saved, entry} */
   async function submit(best, height) {
     if (!current) return { saved: false, reason: 'signed-out' };
-    best = Math.max(0, best | 0); height = Math.max(0, Math.min(MAX_HEIGHT, height | 0));
+    best = Math.max(0, Math.min(MAX_BEST, best | 0)); height = Math.max(0, Math.min(MAX_HEIGHT, height | 0));
     const key = rankKey(best, height);
     const prev = await myEntry();
     if (prev && prev.rankKey >= key) return { saved: false, entry: prev };

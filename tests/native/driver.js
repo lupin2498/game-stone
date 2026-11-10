@@ -5,14 +5,18 @@ const path = require('path');
 const { execSync, execFileSync } = require('child_process');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let fails = 0;
+const failed = [], notes = [];
+let passed = 0;
 function rec(name, ok, detail) {
-  if (!ok) fails++;
   let d = detail === undefined ? '' : ' | ' + (typeof detail === 'string' ? detail : JSON.stringify(detail));
   if (d.length > 700) d = d.slice(0, 700) + '…';
-  console.log((ok ? 'PASS' : 'FAIL') + ' | ' + name + d);
+  const line = (ok ? 'PASS' : 'FAIL') + ' | ' + name + d;
+  if (ok) passed++; else failed.push(line.replace(/\s+/g, ' '));
+  console.log(line);
   return ok;
 }
+/* ghi chú (không tính đạt/trượt) — in ngay và nhắc lại trong phần tóm tắt cuối */
+function note(msg) { msg = String(msg).replace(/\s+/g, ' ').slice(0, 600); notes.push(msg); console.log('# ' + msg); }
 function sh(cmd, opts) {
   try { return execSync(cmd, Object.assign({ encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 180000, maxBuffer: 64 * 1024 * 1024 }, opts || {})).trim(); }
   catch (e) { return 'ERR: ' + String((e.stderr || '') + (e.stdout || '') + e.message).trim().slice(0, 400); }
@@ -38,15 +42,32 @@ async function waitTag(logFile, tag, pred, sec, nth) {
   }
   return null;
 }
-function samplePng(file) {
-  try { const o = execFileSync(process.execPath, [path.join(__dirname, 'png-sample.js'), file, '9'], { encoding: 'utf8' }); console.log(o.trim()); const m = o.match(/TOMTAT (.*)/); return m ? JSON.parse(m[1]) : null; }
-  catch (e) { console.log(String(e.stdout || e.message).trim()); return null; }
+/* tóm tắt ảnh chụp màn hình; quiet = không in lưới màu */
+function samplePng(file, quiet) {
+  const args = [path.join(__dirname, 'png-sample.js'), file, '9']; if (quiet) args.push('q');
+  let o = '', flat = false;
+  try { o = execFileSync(process.execPath, args, { encoding: 'utf8' }); }
+  catch (e) { o = String(e.stdout || e.message); flat = e.status === 2; }      // mã 2 = ảnh gần như một màu (app không vẽ được gì)
+  console.log(o.trim());
+  const m = o.match(/TOMTAT (.*)/); if (!m) return null;
+  const s = JSON.parse(m[1]); if (flat) s.mot_mau = true;
+  return s;
+}
+/* kiểm tra ảnh: nếu trượt thì in thêm lưới màu để nhìn được trong log */
+function checkShot(name, file, pred) {
+  if (!file) return rec(name, false, 'không chụp được ảnh màn hình');
+  const s = samplePng(file, true), ok = !!s && !s.mot_mau && pred(s);
+  if (!ok) samplePng(file, false);
+  return rec(name, ok, s);
 }
 /* các kiểm tra chung cho RESULT của selftest */
 function checkResult(r, platform) {
   rec('app khởi động, game sẵn sàng trong WebView thật', !!(r && r.ready && r.native && r.platform === platform), r && { platform: r.platform, native: r.native, ua: r.ua, size: r.size });
   if (!r || !r.ready) return;
-  rec('vòng lặp game chạy (fps > 5) và canvas vẽ được (trăng sáng, trời xanh đậm)', r.fps > 5 && Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 180 && Array.isArray(r.pixels.sky) && r.pixels.sky[2] >= r.pixels.sky[0], { fps: r.fps, pixels: r.pixels });
+  // Máy ảo CI vẽ bằng CPU nên fps rất thấp: chỉ đòi vòng lặp game thật sự chạy (biến thời gian của game tăng) và canvas có hình.
+  rec('vòng lặp game chạy và canvas vẽ được (trăng sáng, trời xanh đậm)', r.fps >= 1 && r.loop >= 2 && !r.frameErr && Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 180 && Array.isArray(r.pixels.sky) && r.pixels.sky[2] >= r.pixels.sky[0],
+    { fps: r.fps, frameGame2s: r.loop, frameErr: r.frameErr, pixels: r.pixels });
+  if (r.fps < 5) note('fps trên máy ảo thấp (' + r.fps + ') — máy ảo CI không có GPU, không phản ánh máy thật');
   rec('chơi thử 3 viên: tính điểm, vật lý hữu hạn, màn kết thúc hiện', r.play.score >= 1 && r.play.finite && r.overShown, r.play);
   rec('lưu kỷ lục vào bộ nhớ máy', String(r.stored) !== 'ERR' && +r.stored >= 1, { stored: r.stored });
   rec('không đăng ký service worker trong app', r.sw === 0 || r.sw === -1, { sw: r.sw });
@@ -55,4 +76,30 @@ function checkResult(r, platform) {
   rec('HUD né vùng an toàn (status bar / tai thỏ)', Math.abs(r.safe.hudTop - (top + 12)) <= 2, r.safe);
   rec('không có lỗi JS khi chạy', (r.errors || []).length === 0, r.errors);
 }
-module.exports = { sleep, rec, sh, events, waitTag, samplePng, checkResult, failCount: () => fails };
+/* ---- hàm thuần cho Android (có test ở tests/game/08) ---- */
+/* dòng mCurrentFocus của "dumpsys window": đúng là Activity của game, không phải hộp thoại hệ thống đè lên */
+function appHasFocus(raw, pkg) { return new RegExp('mCurrentFocus=Window\\{[^}]*\\s' + pkg.replace(/\./g, '\\.') + '/').test(raw); }
+/* XML của "uiautomator dump" -> danh sách nút/chữ kèm toạ độ tâm */
+function parseUi(xml) {
+  const nodes = [], re = /<node\b([^>]*)>/g; let m;
+  while ((m = re.exec(String(xml)))) {
+    const a = m[1], g = k => { const x = a.match(new RegExp('(?:^|\\s)' + k + '="([^"]*)"')); return x ? x[1].replace(/&apos;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&') : ''; };
+    const b = g('bounds').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+    nodes.push({ text: g('text'), id: g('resource-id'), pkg: g('package'), clickable: g('clickable') === 'true', x: b ? Math.round((+b[1] + +b[3]) / 2) : 0, y: b ? Math.round((+b[2] + +b[4]) / 2) : 0 });
+  }
+  return nodes;
+}
+/* nút nên bấm để gạt hộp thoại hệ thống (ANR "isn't responding" / "keeps stopping"): ưu tiên Wait để không giết tiến trình nào */
+function pickDialogButton(nodes) {
+  return nodes.find(n => /:id\/aerr_wait$/.test(n.id)) || nodes.find(n => /^(wait|chờ|đợi)$/i.test(n.text)) ||
+    nodes.find(n => /:id\/aerr_close$/.test(n.id)) || nodes.find(n => /^(close app|đóng ứng dụng|ok|got it)$/i.test(n.text)) || null;
+}
+/* phần tóm tắt in ở CUỐI log (để đọc được chỉ với vài chục dòng cuối) */
+function summary(title, extra) {
+  console.log('\n===== TÓM TẮT ' + title + ' =====');
+  if (extra) console.log(extra);
+  notes.forEach(n => console.log('GHI CHÚ | ' + n));
+  failed.forEach(f => console.log(f.length > 420 ? f.slice(0, 420) + '…' : f));
+  console.log(title + ': ' + passed + ' PASS, ' + failed.length + ' FAIL' + (failed.length ? '' : ' — tất cả PASS'));
+}
+module.exports = { sleep, rec, note, sh, events, waitTag, samplePng, checkShot, checkResult, summary, appHasFocus, parseUi, pickDialogButton, failCount: () => failed.length };

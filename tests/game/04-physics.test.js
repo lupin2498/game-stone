@@ -80,6 +80,18 @@ const N = +(process.env.FUZZ_SCALE || 1);
     check(!r.SCORED && !r.timeout, 'đá tựa sườn chân đế/chạm đất vẫn được tính điểm hoặc kẹt', r); return r;
   });
 
+  await test('P8 tốc độ khung hình 30 / 60 / 120 fps cho kết quả chơi tương đương (bước vật lý cố định)', async () => {
+    const r = await p.evaluate(`((games)=>{ const out={};
+      for(const fps of [30,60,120]){ let sum=0, n=0, guard=0; startGame();
+        while(n<games && guard++<400000){ update(1/fps);
+          if(state==='aim' && preview && performance.now()>=0){ const tp=topStone(), tgt=tp?tp.pos.x:centerX; if(Math.abs(preview.pos.x-tgt)<3.5){ inputBlockUntil=0; drop(); } }
+          if(state==='over'){ sum+=score; n++; over.classList.remove('on'); startGame(); } }
+        out[fps]=+(sum/Math.max(1,n)).toFixed(2); }
+      return out; })(${40 * N})`);
+    const v = [r[30], r[60], r[120]], mx = Math.max(...v), mn = Math.min(...v);
+    check(mn > 2 && mx / mn < 1.8, 'kết quả lệch nhiều theo fps', r); return r;
+  });
+
   await p.context().close();
   await finish();
 })();
