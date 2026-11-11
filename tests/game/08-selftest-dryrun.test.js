@@ -24,6 +24,8 @@ const FAKE_CAP = require('../lib/fake-capacitor');
     check(await has('RESULT', undefined, 90000), 'không có RESULT', seen.slice(-5));
     const r = log.RESULT[0];
     check(r.fps >= 1 && r.loop >= 2 && r.rafTs >= 2 && r.early && r.early.game >= 2 && r.early.ts >= 2 && r.frameErr === false, 'số đo vòng lặp game sai', { fps: r.fps, loop: r.loop, rafTs: r.rafTs, early: r.early, frameErr: r.frameErr });
+    check(r.lastRaw >= 2 && r.lastCopy >= 2, 'đọc biến last của game từ script khác không thấy đổi', { lastRaw: r.lastRaw, lastCopy: r.lastCopy });
+    check(r.engine && r.engine.same && r.engine.slot && !r.engine.crossAlias && !r.engine.crossStale && !r.engine.err, 'phép dò engine JS báo sai trên Chromium chuẩn', r.engine);
     check(r.ready && r.native && r.platform === 'android' && r.play.score >= 1 && r.play.finite && r.overShown && r.sw === 0, 'RESULT sai', r);
     check(r.online.configured && r.online.api && r.online.known && r.online.native && !r.online.failed, 'online.js không khởi tạo trong vỏ app', r.online);
     check(Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 200 && r.pixels.sky[2] > r.pixels.sky[0], 'canvas không vẽ đúng', r.pixels);

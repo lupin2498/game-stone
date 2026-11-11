@@ -14,13 +14,42 @@
   try { window.Capacitor.addListener('App', 'appUrlOpen', function (e) { urlOpens++; out('URLOPEN', { n: urlOpens, url: String(e && e.url).slice(0, 90) }); }); } catch (e) {}
   var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   async function until(fn, ms) { var t = Date.now(); while (Date.now() - t < ms) { try { if (fn()) return true; } catch (e) {} await wait(60); } return false; }
+  /* Số frame THẬT của game = số lần update() được gọi (bọc hàm lại để đếm) — không dựa vào việc đọc biến của script khác. */
+  var gameFrames = 0;
+  try { var _upd = update; update = function (dt) { gameFrames++; return _upd(dt); }; } catch (e) { out('JSERROR', 'wrap update: ' + e); }
   /* Đếm trong một khoảng: số lần rAF gọi (raf), số mốc thời gian rAF khác nhau (ts — WebView có cấp khung hình thật hay không),
-     số frame của game (game — biến last của vòng lặp đổi giá trị). Đo ít nhất minMs, kéo dài tới maxMs cho tới khi đủ 3 frame game. */
-  function countFrames(minMs, maxMs) { return new Promise(function (res) { var n = 0, g = 0, a = 0, pl = null, pt = null, t = performance.now();
-    requestAnimationFrame(function f(ts) { n++; if (ts !== pt) { a++; pt = ts; } try { if (last !== pl) { g++; pl = last; } } catch (e) {}
+     số frame của game (game). lastRaw/lastCopy: số lần thấy biến "last" của game đổi khi so trực tiếp / khi so bản sao (last + 0) —
+     hai số này lệch nhau nghĩa là engine JS trả về "hộp số" dùng chung khi script khác đọc biến let (xem engineProbe).
+     Đo ít nhất minMs, kéo dài tới maxMs cho tới khi đủ 3 frame game. */
+  function countFrames(minMs, maxMs) { return new Promise(function (res) { var n = 0, a = 0, g = 0, gc = 0, pl = null, pc = null, pt = null, g0 = gameFrames, t = performance.now(), done = false;
+    var fin = function (to) { if (done) return; done = true; var o = { raf: n, ts: a, game: gameFrames - g0, lastRaw: g, lastCopy: gc, ms: Math.round(performance.now() - t) }; if (to) o.timeout = true; res(o); };
+    requestAnimationFrame(function f(ts) { n++; if (ts !== pt) { a++; pt = ts; }
+      try { if (last !== pl) { g++; pl = last; } var c = last + 0; if (c !== pc) { gc++; pc = c; } } catch (e) {}
       var el = performance.now() - t;
-      if (el < minMs || (g < 3 && el < maxMs)) requestAnimationFrame(f); else res({ raf: n, ts: a, game: g, ms: Math.round(el) }); });
-    setTimeout(function () { res({ raf: n, ts: a, game: g, ms: Math.round(performance.now() - t), timeout: true }); }, maxMs + 3000); }); }
+      if (el < minMs || (gameFrames - g0 < 3 && el < maxMs)) requestAnimationFrame(f); else fin(false); });
+    setTimeout(function () { fin(true); }, maxMs + 3000); }); }
+  /* Dò lỗi engine JS: Chrome/WebView đời mới lưu số thực của biến let cấp cao nhất trong một "hộp" sửa tại chỗ. Nếu engine để lộ chính
+     cái hộp đó thì bản sao "giá trị cũ" tự đổi theo giá trị mới. Kiểm: trong cùng script (same), gán sang biến let khác (slot),
+     và đọc từ script khác (crossAlias = bản sao bị đổi theo, crossStale = đọc ra giá trị cũ). Game chỉ có 1 script nên chỉ same/slot là đáng lo. */
+  function engineProbe() {
+    var o = { same: true, slot: true, crossAlias: false, crossStale: false };
+    try {
+      var sc = document.createElement('script');
+      sc.textContent = 'let __pA = 0.5, __pB = 0.25;\n' +
+        'function __pSame(){ const old = __pA; __pA = __pA + 1.25; return old !== __pA; }\n' +
+        'function __pSlot(){ __pB = __pA; __pA = __pA + 1.25; return __pB !== __pA; }\n' +
+        'function __pBump(){ __pA = __pA + 1.25; return __pA + 0; }\n';
+      document.head.appendChild(sc);
+      for (var i = 0; i < 3000; i++) {
+        if (!__pSame()) o.same = false;
+        if (!__pSlot()) o.slot = false;
+        var x = __pA, nv = __pBump(), cur = __pA;
+        if (x === nv) o.crossAlias = true;
+        if (cur !== nv) o.crossStale = true;
+      }
+    } catch (e) { o.err = String(e).slice(0, 100); }
+    return o;
+  }
   function px(x, y) { try { var d = ctx.getImageData(Math.round(x * DPR), Math.round(y * DPR), 1, 1).data; return [d[0], d[1], d[2], d[3]]; } catch (e) { return String(e).slice(0, 60); } }
   function cssPx(prop) { var d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-top:' + prop; document.body.appendChild(d); var v = parseFloat(getComputedStyle(d).paddingTop); d.remove(); return v; }
 
@@ -35,19 +64,20 @@
     // 9999 = biến/hàm không được định nghĩa trên nền tảng này
     r.safe = { varTop: cssPx('var(--safe-area-inset-top, 9999px)'), varBottom: cssPx('var(--safe-area-inset-bottom, 9999px)'), envTop: cssPx('env(safe-area-inset-top, 9999px)'), envBottom: cssPx('env(safe-area-inset-bottom, 9999px)'),
       hudTop: Math.round(document.querySelector('.stat').getBoundingClientRect().top), hintGap: Math.round(innerHeight - hint.getBoundingClientRect().bottom) };
+    r.engine = engineProbe();
     r.early = await countFrames(2000, 2000);       // ngay sau khi mở app: máy ảo chậm có thể chưa vẽ khung hình thật nào
     // chơi thử 3 viên bằng sự kiện con trỏ tổng hợp (đi qua đúng trình xử lý chạm của game)
     startGame();
     for (var i = 0; i < 3 && state !== 'over'; i++) {
-      await until(function () { var t = topStone(); return state === 'aim' && performance.now() >= inputBlockUntil && Math.abs(preview.pos.x - (t ? t.pos.x : centerX)) < 5; }, 15000);
+      await until(function () { var t = topStone(); return state === 'aim' && performance.now() >= inputBlockUntil && Math.abs(preview.pos.x - (t ? t.pos.x : centerX)) < 5; }, 45000);
       cv.dispatchEvent(new (window.PointerEvent || MouseEvent)(window.PointerEvent ? 'pointerdown' : 'mousedown', { bubbles: true, cancelable: true }));
-      await until(function () { return state !== 'falling'; }, 15000);
+      await until(function () { return state !== 'falling'; }, 45000);     // máy ảo ~2 fps: game chạy chậm ~20 lần so với đồng hồ thật
     }
     await wait(300);
     r.play = { score: score, state: state, bodies: world.bodies.length, heightCm: heightCm,
       finite: world.bodies.every(function (b) { return isFinite(b.pos.x + b.pos.y + b.angle); }) };
     var fr = await countFrames(1500, 10000);       // đo khi game đã chạy
-    r.fps = Math.round(fr.raf / (fr.ms / 1000) * 10) / 10; r.loop = fr.game; r.loopMs = fr.ms; r.rafTs = fr.ts;
+    r.fps = Math.round(fr.raf / (fr.ms / 1000) * 10) / 10; r.loop = fr.game; r.loopMs = fr.ms; r.rafTs = fr.ts; r.lastRaw = fr.lastRaw; r.lastCopy = fr.lastCopy;
     r.pixels = { sky: px(6, H * 0.3), moon: px(W * 0.78, 104 + (camY - camY0) * 0.05), ground: px(W / 2, H - 8) };
     r.audio = SFX.ctx ? SFX.ctx.state : 'none';
     gameOver('selftest');

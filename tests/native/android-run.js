@@ -63,7 +63,7 @@ async function settle() {
   console.log('# gói: ' + D.sh(`adb shell "dumpsys package ${PKG} | grep -E 'versionName|versionCode' | head -2"`).replace(/\s+/g, ' '));
   adb(`shell am start -W -n ${PKG}/.MainActivity`);
 
-  const r = await D.waitTag(LOG, 'RESULT', null, 300);
+  const r = await D.waitTag(LOG, 'RESULT', null, 480);
   D.checkResult(r, 'android');
   if (!r) { console.log(D.sh(`tail -n 60 "${LOG}"`)); const s = shot('0-khong-co-ket-qua.png'); if (s) D.samplePng(s); }
 
@@ -125,7 +125,7 @@ async function settle() {
     // khởi động lại app: kỷ lục còn nguyên (dữ liệu bền qua lần mở sau / cài đè)
     adb(`shell am force-stop ${PKG}`); await D.sleep(1000);
     const again = adb(`install -r "${APK}"`); adb(`shell am start -W -n ${PKG}/.MainActivity`);
-    const r2 = await D.waitTag(LOG, 'RESULT', null, 300, 2);
+    const r2 = await D.waitTag(LOG, 'RESULT', null, 480, 2);
     D.rec('cài đè + mở lại: kỷ lục vẫn còn', /Success/.test(again) && !!r2 && +r2.storedAtStart >= 1, r2 ? { storedAtStart: r2.storedAtStart, install: again.slice(-30) } : again.slice(-200));
   }
   const lines = fs.readFileSync(LOG, 'utf8').split('\n');

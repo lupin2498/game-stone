@@ -66,10 +66,15 @@ function checkResult(r, platform) {
   if (!r || !r.ready) return;
   // Máy ảo CI vẽ bằng CPU nên fps rất thấp: chỉ đòi vòng lặp game thật sự chạy (biến thời gian của game tăng) và canvas có hình.
   rec('vòng lặp game chạy và canvas vẽ được (trăng sáng, trời xanh đậm)', r.loop >= 2 && !r.frameErr && Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 180 && Array.isArray(r.pixels.sky) && r.pixels.sky[2] >= r.pixels.sky[0],
-    { fps: r.fps, frameGame: r.loop, mocRaf: r.rafTs, trongMs: r.loopMs, frameErr: r.frameErr, pixels: r.pixels });
-  const e = r.early;
-  if (e && e.game < 2) note('2 giây đầu sau khi mở app: rAF được gọi ' + e.raf + ' lần nhưng chỉ có ' + e.ts + ' mốc thời gian khác nhau, game ghi nhận ' + e.game +
-    ' frame — WebView chưa cấp khung hình thật (máy ảo còn đang dựng cửa sổ); sau đó game chạy bình thường');
+    { fps: r.fps, frameGame: r.loop, mocRaf: r.rafTs, lastRaw: r.lastRaw, lastCopy: r.lastCopy, trongMs: r.loopMs, frameErr: r.frameErr, pixels: r.pixels });
+  const e = r.early, g = r.engine;
+  if (e && e.game < 2) note('2 giây đầu sau khi mở app: rAF được gọi ' + e.raf + ' lần, game chạy ' + e.game + ' frame (máy ảo còn đang dựng cửa sổ)');
+  // Engine JS: bản sao số thực trong CÙNG script phải giữ nguyên giá trị (game dựa vào điều này); đọc chéo script chỉ ảnh hưởng mã test
+  if (g) {
+    rec('engine JS của WebView: bản sao số thực của biến let trong cùng script không bị đổi ngầm', !!(g.same && g.slot && !g.err), g);
+    if (g.crossAlias || g.crossStale) note('engine JS của WebView này trả sai khi SCRIPT KHÁC đọc biến let số thực của game (' + (g.crossAlias ? 'bản sao bị đổi theo' : 'đọc ra giá trị cũ') +
+      ') — lỗi của engine, chỉ đụng tới mã test đọc chéo script; game nằm trọn trong 1 script nên không bị');
+  }
   if (r.fps < 5) note('fps trên máy ảo thấp (' + r.fps + ') — máy ảo CI không có GPU, không phản ánh máy thật');
   rec('chơi thử 3 viên: tính điểm, vật lý hữu hạn, màn kết thúc hiện', r.play.score >= 1 && r.play.finite && r.overShown, r.play);
   rec('lưu kỷ lục vào bộ nhớ máy', String(r.stored) !== 'ERR' && +r.stored >= 1, { stored: r.stored });
