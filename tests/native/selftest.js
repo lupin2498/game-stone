@@ -10,10 +10,15 @@
   window.addEventListener('unhandledrejection', function (e) { var m = 'rejection: ' + String(e.reason).slice(0, 200); errors.push(m); out('JSERROR', m); });
   document.addEventListener('visibilitychange', function () { out('VISIBILITY', { hidden: document.hidden }); });
   out('BOOT', { at: location.protocol + '//' + location.host, rs: document.readyState });
+  var urlOpens = 0;
+  try { window.Capacitor.addListener('App', 'appUrlOpen', function (e) { urlOpens++; out('URLOPEN', { n: urlOpens, url: String(e && e.url).slice(0, 90) }); }); } catch (e) {}
   var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   async function until(fn, ms) { var t = Date.now(); while (Date.now() - t < ms) { try { if (fn()) return true; } catch (e) {} await wait(60); } return false; }
-  function countFrames(ms) { return new Promise(function (res) { var n = 0, g = 0, pl = null, t = performance.now();
-    (function f() { n++; try { if (last !== pl) { g++; pl = last; } } catch (e) {} if (performance.now() - t < ms) requestAnimationFrame(f); else res({ raf: n, game: g }); })(); }); }
+  /* đếm frame: rAF của WebView + frame thật của game (biến last của vòng lặp đổi giá trị). Máy ảo CI có khi chỉ ~1 fps
+     nên đo ít nhất minMs, và kéo dài tới maxMs cho tới khi thấy đủ 3 frame của game. */
+  function countFrames(minMs, maxMs) { return new Promise(function (res) { var n = 0, g = 0, pl = null, t = performance.now();
+    (function f() { n++; try { if (last !== pl) { g++; pl = last; } } catch (e) {} var el = performance.now() - t;
+      if (el < minMs || (g < 3 && el < maxMs)) requestAnimationFrame(f); else res({ raf: n, game: g, ms: el }); })(); }); }
   function px(x, y) { try { var d = ctx.getImageData(Math.round(x * DPR), Math.round(y * DPR), 1, 1).data; return [d[0], d[1], d[2], d[3]]; } catch (e) { return String(e).slice(0, 60); } }
   function cssPx(prop) { var d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-top:' + prop; document.body.appendChild(d); var v = parseFloat(getComputedStyle(d).paddingTop); d.remove(); return v; }
 
@@ -28,8 +33,8 @@
     // 9999 = biến/hàm không được định nghĩa trên nền tảng này
     r.safe = { varTop: cssPx('var(--safe-area-inset-top, 9999px)'), varBottom: cssPx('var(--safe-area-inset-bottom, 9999px)'), envTop: cssPx('env(safe-area-inset-top, 9999px)'), envBottom: cssPx('env(safe-area-inset-bottom, 9999px)'),
       hudTop: Math.round(document.querySelector('.stat').getBoundingClientRect().top), hintGap: Math.round(innerHeight - hint.getBoundingClientRect().bottom) };
-    var fr = await countFrames(2000);
-    r.fps = Math.round(fr.raf / 2 * 10) / 10; r.loop = fr.game;
+    var fr = await countFrames(2000, 12000);
+    r.fps = Math.round(fr.raf / (fr.ms / 1000) * 10) / 10; r.loop = fr.game; r.loopMs = Math.round(fr.ms);
     // chơi thử 3 viên bằng sự kiện con trỏ tổng hợp (đi qua đúng trình xử lý chạm của game)
     startGame();
     for (var i = 0; i < 3 && state !== 'over'; i++) {
@@ -78,8 +83,16 @@
     var msg = function () { var m = document.querySelector('.sheet.on .acct-msg'); return m ? m.textContent : ''; };
     await wait(600);
     out('PHASE', 'deeplink-ready');
-    var got = await until(function () { return /hết hạn/.test(msg()); }, 60000);
-    out('DEEPLINK', { ok: got, msg: msg().slice(0, 80), user: !!Online.user });
+    var self = false, expired = function () { return /hết hạn/.test(msg()); };
+    var got = await until(expired, r.platform === 'ios' ? 5000 : 60000);
+    if (!got && r.platform === 'ios') {
+      // iOS Simulator: "simctl openurl" bị hệ thống hỏi "Open in …?" mà CI không bấm được. Thay vào đó cho trang điều hướng tới URL scheme
+      // của chính app: Capacitor chuyển cho iOS mở (UIApplication.open) -> iOS giao lại cho app qua AppDelegate -> sự kiện appUrlOpen.
+      self = true;
+      try { location.href = 'com.luoin.stonebalance://auth#p=google&s=0123456789abcdef'; } catch (e) { out('JSERROR', 'self-open: ' + e); }
+      got = await until(expired, 40000);
+    }
+    out('DEEPLINK', { ok: got, self: self, opens: urlOpens, msg: msg().slice(0, 80), user: !!Online.user, sameDoc: typeof startGame === 'function' });
     out('DONE', { errors: errors.slice(0, 5), sec: Math.round((Date.now() - T0) / 1000) });
   }
   if (document.readyState === 'complete') setTimeout(run, 1200); else window.addEventListener('load', function () { setTimeout(run, 1200); });

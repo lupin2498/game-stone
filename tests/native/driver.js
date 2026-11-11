@@ -65,8 +65,8 @@ function checkResult(r, platform) {
   rec('app khởi động, game sẵn sàng trong WebView thật', !!(r && r.ready && r.native && r.platform === platform), r && { platform: r.platform, native: r.native, ua: r.ua, size: r.size });
   if (!r || !r.ready) return;
   // Máy ảo CI vẽ bằng CPU nên fps rất thấp: chỉ đòi vòng lặp game thật sự chạy (biến thời gian của game tăng) và canvas có hình.
-  rec('vòng lặp game chạy và canvas vẽ được (trăng sáng, trời xanh đậm)', r.fps >= 1 && r.loop >= 2 && !r.frameErr && Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 180 && Array.isArray(r.pixels.sky) && r.pixels.sky[2] >= r.pixels.sky[0],
-    { fps: r.fps, frameGame2s: r.loop, frameErr: r.frameErr, pixels: r.pixels });
+  rec('vòng lặp game chạy và canvas vẽ được (trăng sáng, trời xanh đậm)', r.loop >= 2 && !r.frameErr && Array.isArray(r.pixels.moon) && r.pixels.moon[0] > 180 && Array.isArray(r.pixels.sky) && r.pixels.sky[2] >= r.pixels.sky[0],
+    { fps: r.fps, frameGame: r.loop, trongMs: r.loopMs, frameErr: r.frameErr, pixels: r.pixels });
   if (r.fps < 5) note('fps trên máy ảo thấp (' + r.fps + ') — máy ảo CI không có GPU, không phản ánh máy thật');
   rec('chơi thử 3 viên: tính điểm, vật lý hữu hạn, màn kết thúc hiện', r.play.score >= 1 && r.play.finite && r.overShown, r.play);
   rec('lưu kỷ lục vào bộ nhớ máy', String(r.stored) !== 'ERR' && +r.stored >= 1, { stored: r.stored });
