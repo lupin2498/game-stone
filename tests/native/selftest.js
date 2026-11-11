@@ -14,11 +14,13 @@
   try { window.Capacitor.addListener('App', 'appUrlOpen', function (e) { urlOpens++; out('URLOPEN', { n: urlOpens, url: String(e && e.url).slice(0, 90) }); }); } catch (e) {}
   var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   async function until(fn, ms) { var t = Date.now(); while (Date.now() - t < ms) { try { if (fn()) return true; } catch (e) {} await wait(60); } return false; }
-  /* đếm frame: rAF của WebView + frame thật của game (biến last của vòng lặp đổi giá trị). Máy ảo CI có khi chỉ ~1 fps
-     nên đo ít nhất minMs, và kéo dài tới maxMs cho tới khi thấy đủ 3 frame của game. */
-  function countFrames(minMs, maxMs) { return new Promise(function (res) { var n = 0, g = 0, pl = null, t = performance.now();
-    (function f() { n++; try { if (last !== pl) { g++; pl = last; } } catch (e) {} var el = performance.now() - t;
-      if (el < minMs || (g < 3 && el < maxMs)) requestAnimationFrame(f); else res({ raf: n, game: g, ms: el }); })(); }); }
+  /* Đếm trong một khoảng: số lần rAF gọi (raf), số mốc thời gian rAF khác nhau (ts — WebView có cấp khung hình thật hay không),
+     số frame của game (game — biến last của vòng lặp đổi giá trị). Đo ít nhất minMs, kéo dài tới maxMs cho tới khi đủ 3 frame game. */
+  function countFrames(minMs, maxMs) { return new Promise(function (res) { var n = 0, g = 0, a = 0, pl = null, pt = null, t = performance.now();
+    requestAnimationFrame(function f(ts) { n++; if (ts !== pt) { a++; pt = ts; } try { if (last !== pl) { g++; pl = last; } } catch (e) {}
+      var el = performance.now() - t;
+      if (el < minMs || (g < 3 && el < maxMs)) requestAnimationFrame(f); else res({ raf: n, ts: a, game: g, ms: Math.round(el) }); });
+    setTimeout(function () { res({ raf: n, ts: a, game: g, ms: Math.round(performance.now() - t), timeout: true }); }, maxMs + 3000); }); }
   function px(x, y) { try { var d = ctx.getImageData(Math.round(x * DPR), Math.round(y * DPR), 1, 1).data; return [d[0], d[1], d[2], d[3]]; } catch (e) { return String(e).slice(0, 60); } }
   function cssPx(prop) { var d = document.createElement('div'); d.style.cssText = 'position:fixed;visibility:hidden;padding-top:' + prop; document.body.appendChild(d); var v = parseFloat(getComputedStyle(d).paddingTop); d.remove(); return v; }
 
@@ -33,8 +35,7 @@
     // 9999 = biến/hàm không được định nghĩa trên nền tảng này
     r.safe = { varTop: cssPx('var(--safe-area-inset-top, 9999px)'), varBottom: cssPx('var(--safe-area-inset-bottom, 9999px)'), envTop: cssPx('env(safe-area-inset-top, 9999px)'), envBottom: cssPx('env(safe-area-inset-bottom, 9999px)'),
       hudTop: Math.round(document.querySelector('.stat').getBoundingClientRect().top), hintGap: Math.round(innerHeight - hint.getBoundingClientRect().bottom) };
-    var fr = await countFrames(2000, 12000);
-    r.fps = Math.round(fr.raf / (fr.ms / 1000) * 10) / 10; r.loop = fr.game; r.loopMs = Math.round(fr.ms);
+    r.early = await countFrames(2000, 2000);       // ngay sau khi mở app: máy ảo chậm có thể chưa vẽ khung hình thật nào
     // chơi thử 3 viên bằng sự kiện con trỏ tổng hợp (đi qua đúng trình xử lý chạm của game)
     startGame();
     for (var i = 0; i < 3 && state !== 'over'; i++) {
@@ -45,6 +46,8 @@
     await wait(300);
     r.play = { score: score, state: state, bodies: world.bodies.length, heightCm: heightCm,
       finite: world.bodies.every(function (b) { return isFinite(b.pos.x + b.pos.y + b.angle); }) };
+    var fr = await countFrames(1500, 10000);       // đo khi game đã chạy
+    r.fps = Math.round(fr.raf / (fr.ms / 1000) * 10) / 10; r.loop = fr.game; r.loopMs = fr.ms; r.rafTs = fr.ts;
     r.pixels = { sky: px(6, H * 0.3), moon: px(W * 0.78, 104 + (camY - camY0) * 0.05), ground: px(W / 2, H - 8) };
     r.audio = SFX.ctx ? SFX.ctx.state : 'none';
     gameOver('selftest');
